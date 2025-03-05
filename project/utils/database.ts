@@ -1,7 +1,7 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_URL = 'https://ledger-creation-new.vercel.app/api';
+const API_URL = 'http://localhost:3000/api'; // Using localhost for development
 
 // Get all companies
 export const getCompanies = async () => {
@@ -17,8 +17,17 @@ export const getCompanies = async () => {
 // Initialize database connection
 export const initializeDatabase = async () => {
   try {
-    // Test the connection by making a simple request
-    await axios.get(`${API_URL}/suppliers`);
+    // Get company ID from AsyncStorage
+    const companyId = await AsyncStorage.getItem('companyId');
+    if (!companyId) {
+      throw new Error('Company ID not found. Please log in again.');
+    }
+
+    // Test the connection by making a simple request with company ID
+    await axios.get(`${API_URL}/suppliers`, {
+      params: { companyId },
+      headers: { 'company-id': companyId }
+    });
     console.log('Database connection initialized successfully');
   } catch (error) {
     console.error('Failed to initialize database connection:', error);
@@ -152,12 +161,63 @@ export const clearDatabase = async () => {
   console.warn('clearDatabase is not implemented for MS SQL Server');
 };
 
-// Delete supplier (optional implementation)
+// Delete supplier
 export const deleteLedgerEntry = async (id: number) => {
-  console.warn('deleteLedgerEntry is not implemented for MS SQL Server');
+  try {
+    const response = await axios.delete(`${API_URL}/suppliers/${id}`);
+    return response.data;
+  } catch (error: any) {
+    console.error('Error deleting supplier:', error);
+    throw new Error(error.response?.data?.message || 'Failed to delete supplier');
+  }
 };
 
-// Update supplier (optional implementation)
+// Update supplier
 export const updateLedgerEntry = async (id: number, data: any) => {
-  console.warn('updateLedgerEntry is not implemented for MS SQL Server');
+  try {
+    // Validate required fields
+    if (!data.ledgerName || !data.city || !data.ledgerGroupId) {
+      throw new Error('Required fields are missing');
+    }
+
+    // Get company ID from AsyncStorage
+    const companyId = await AsyncStorage.getItem('companyId');
+    if (!companyId) {
+      throw new Error('Company ID not found. Please log in again.');
+    }
+
+    const payload = {
+      Supplier: data.ledgerName,
+      Add1: data.address1 || '',
+      Add2: data.address2 || '',
+      City: data.city,
+      Phone: data.phoneNumber || '',
+      Fax: '',
+      TNGST_No: data.gstNumber || '',
+      TIN_No: '',
+      Mailid: data.email || '',
+      Contact_person: data.contact || '',
+      Mobile_No: data.mobileNumber || '',
+      Supplier_Customer: 'S',
+      Isactive: data.isActive ? 'Y' : 'N',
+      Add3: data.address3 || '',
+      CompId: parseInt(companyId),
+      LedgerGroupId: data.ledgerGroupId,
+      PrintName: data.printName || data.ledgerName,
+      SupCode: data.ledgerName.substring(0, 3).toUpperCase(),
+      CreditDays: data.creditDays || 0,
+      VhNo: '',
+      OpBalAmt: parseFloat(data.openingBalance || '0'),
+      OpType: data.balanceType || 'Dr',
+      LastUpdate: new Date().toISOString()
+    };
+
+    const response = await axios.put(`${API_URL}/suppliers/${id}`, payload, {
+      headers: { 'company-id': companyId }
+    });
+    return response.data;
+  } catch (error: any) {
+    console.error('Error updating supplier:', error);
+    throw new Error(error.response?.data?.message || 'Failed to update supplier');
+  }
 };

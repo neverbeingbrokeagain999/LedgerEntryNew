@@ -6,9 +6,13 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
-  ActivityIndicator
+  ActivityIndicator,
+  TextInput,
+  Alert
 } from 'react-native';
-import { getLedgerEntries } from '@/utils/database';
+import { getLedgerEntries, updateLedgerEntry } from '@/utils/database';
+import { router } from 'expo-router';
+import SupplierListItem from '@/components/SupplierListItem';
 
 type Supplier = {
   SupplierId: number;
@@ -26,16 +30,20 @@ export default function SupplierListScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredSuppliers = suppliers?.filter(supplier =>
+    (supplier.Supplier?.toLowerCase() || '').includes((searchQuery || '').toLowerCase()) ||
+    (supplier.PrintName?.toLowerCase() || '').includes((searchQuery || '').toLowerCase())
+  );
 
   const loadSuppliers = async () => {
     try {
       const data = await getLedgerEntries();
-      // Sort suppliers by LastUpdate in descending order (newest first)
       const sortedData = data.sort((a, b) => {
-        // Convert dates to timestamps, using 0 for invalid dates
         const dateA = new Date(a.LastUpdate || '').getTime() || 0;
         const dateB = new Date(b.LastUpdate || '').getTime() || 0;
-        return dateB - dateA; // Sort in descending order (newest first)
+        return dateB - dateA;
       });
       setSuppliers(sortedData);
       setError('');
@@ -59,9 +67,39 @@ export default function SupplierListScreen() {
     loadSuppliers();
   }, []);
 
-  const formatBalance = (amount: number, type: string) => {
-    const value = Math.abs(amount);
-    return `${value.toFixed(2)} ${type}`;
+  const handleEdit = (id: number) => {
+    router.push(`/edit/${id}`);
+  };
+
+  const handleView = (id: number) => {
+    router.push(`/view/${id}`);
+  };
+
+  const handleUpdate = async (id: number, data: any) => {
+    try {
+      // Convert opening balance to number
+      const openingBalanceValue = data.openingBalance
+        ? parseFloat(data.openingBalance)
+        : 0;
+
+      // Adjust sign based on Dr/Cr
+      const finalBalance = data.balanceType === 'Dr'
+        ? Math.abs(openingBalanceValue)
+        : -Math.abs(openingBalanceValue);
+
+      const updatedData = {
+        ...data,
+        city: parseInt(data.city) || 1,
+        ledgerGroupId: parseInt(data.ledgerGroupId) || 1,
+        openingBalance: finalBalance,
+        isActive: data.isActive ? 'Y' : 'N'
+      };
+      await updateLedgerEntry(id, updatedData);
+      await loadSuppliers();
+    } catch (err: any) {
+      console.error('Error updating supplier:', err);
+      Alert.alert('Error', err.message || 'Failed to update supplier');
+    }
   };
 
   if (isLoading) {
@@ -77,6 +115,13 @@ export default function SupplierListScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerText}>Saved Suppliers</Text>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search suppliers..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          clearButtonMode="while-editing"
+        />
       </View>
 
       {error ? (
@@ -96,33 +141,17 @@ export default function SupplierListScreen() {
             />
           }
         >
-          {!suppliers || suppliers.length === 0 ? (
-            <Text style={styles.noDataText}>No suppliers found</Text>
+          {!filteredSuppliers || filteredSuppliers.length === 0 ? (
+            <Text style={styles.noDataText}>{searchQuery ? 'No matching suppliers found' : 'No suppliers found'}</Text>
           ) : (
-            suppliers.map((supplier) => (
-              <View key={supplier.SupplierId} style={styles.card}>
-                <View style={styles.cardHeader}>
-                  <Text style={styles.supplierName}>{supplier.Supplier}</Text>
-                  <View style={[styles.badge, supplier.Isactive === 'Y' ? styles.activeBadge : styles.inactiveBadge]}>
-                    <Text style={styles.badgeText}>
-                      {supplier.Isactive === 'Y' ? 'Active' : 'Inactive'}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.cardContent}>
-                  {supplier.PrintName !== supplier.Supplier && (
-                    <Text style={styles.printName}>Print as: {supplier.PrintName}</Text>
-                  )}
-                  <Text style={styles.contactInfo}>
-                    {supplier.Mobile_No && `📱 ${supplier.Mobile_No}`}
-                    {supplier.Mailid && `\n✉️ ${supplier.Mailid}`}
-                  </Text>
-                  <Text style={styles.balance}>
-                    Opening Balance: {formatBalance(supplier.OpBalAmt, supplier.OpType)}
-                  </Text>
-                </View>
-              </View>
+            filteredSuppliers.map((supplier) => (
+              <SupplierListItem
+                key={supplier.SupplierId}
+                supplier={supplier}
+                onEdit={handleEdit}
+                onView={handleView}
+                onUpdate={handleUpdate}
+              />
             ))
           )}
         </ScrollView>
@@ -158,59 +187,6 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
-  card: {
-    backgroundColor: '#fff',
-    marginHorizontal: 16,
-    marginVertical: 8,
-    borderRadius: 8,
-    padding: 16,
-    elevation: 2,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  supplierName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    flex: 1,
-  },
-  badge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginLeft: 8,
-  },
-  activeBadge: {
-    backgroundColor: '#e6f4ea',
-  },
-  inactiveBadge: {
-    backgroundColor: '#fce8e6',
-  },
-  badgeText: {
-    fontSize: 12,
-    color: '#000',
-  },
-  cardContent: {
-    marginTop: 8,
-  },
-  printName: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 4,
-  },
-  contactInfo: {
-    fontSize: 14,
-    color: '#666',
-    marginVertical: 4,
-  },
-  balance: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4,
-  },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -239,5 +215,15 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
     marginTop: 32,
+  },
+  searchInput: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 8,
+    marginTop: 8,
+    marginHorizontal: 16,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: '#ddd',
   },
 });

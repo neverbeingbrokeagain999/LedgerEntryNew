@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = 'https://ledger-creation-new.vercel.app/api';
+const API_URL = 'http://localhost:3000/api';
 
 /**
  * Get company ID from the Company_store table
